@@ -2,6 +2,8 @@
 const DEMO = new URLSearchParams(location.search).has("demo");
 const SIGNATURE = "Sofia";
 const CALENDAR = "https://calendly.com/experienceexchangemag/30min";
+const COLONNADE = "https://advancement.wlu.edu/portal/directory?tab=home";
+const liSearch = (p) => "https://www.linkedin.com/search/results/people/?keywords=" + encodeURIComponent([p.name, p.company].filter(Boolean).join(" "));
 let S = { people: [], log: [], today: "", rules: {} };
 let tab = "today", filter = "all", query = "";
 
@@ -116,7 +118,7 @@ function actionsFor(p, kind, hasMsg) {
   if (kind === "checkin") return copy + mail + b(`act({action:'checked_in',id:${id}},'Logged. Next check-in in 2 months.')`, "I checked in", "primary") + b(`act({action:'snooze',id:${id},days:14},'Back in 2 weeks')`, "Later", "ghost") + open;
   if (kind === "hold") return b(`act({action:'hold_done',id:${id}},'Nice work! Follow-up is on today.')`, "It's done, follow up now", "primary") + b(`act({action:'snooze',id:${id},days:21},'Okay, I'll ask again in 3 weeks')`, "Not yet") + open;
   if (kind === "meeting") return b(`act({action:'met',id:${id}},'Logged. Thank-you due tomorrow.')`, "We talked", "primary") + b(`act({action:'snooze',id:${id},days:3},'Snoozed 3 days')`, "It moved", "ghost") + open;
-  if (kind === "reach") return b(`act({action:'reached_out',id:${id}},'Logged. Follow-up in 3 days.')`, "I reached out", "primary") + snooze + open;
+  if (kind === "reach") return `<button class="btn small primary" onclick="openDraft(${id})">✉️ Draft email</button>` + (p.email ? "" : `<a class="btn small" href="${COLONNADE}" target="_blank">Find email ↗</a>`) + b(`act({action:'reached_out',id:${id}},'Logged. Follow-up in 3 days.')`, "I reached out") + snooze + open;
   return open;
 }
 
@@ -217,9 +219,10 @@ function openPerson(id) {
   const b = (a, label, cls = "") => `<button class="btn small ${cls}" onclick="${a};closeSheet()">${label}</button>`;
   openSheet(`
     <div class="who"><div><h3>${esc(p.name)}</h3><div class="meta">${esc([p.role, p.company].filter(Boolean).join(", "))}</div></div><span class="pill gray">${esc(STATUS[p.status] || p.status)}</span></div>
-    <div class="links" style="margin:10px 0 14px">${p.email ? `<a href="mailto:${esc(p.email)}">Email</a>` : ""}${p.linkedin ? `<a href="${esc(p.linkedin)}" target="_blank">LinkedIn</a>` : ""}${p.phone ? `<a href="tel:${esc(p.phone)}">Call</a>` : ""}</div>
+    <div class="links" style="margin:10px 0 14px">${p.email ? `<a href="mailto:${esc(p.email)}">Email</a>` : `<a href="${COLONNADE}" target="_blank">Find email on Colonnade ↗</a>`}${!p.linkedin ? `<a href="${liSearch(p)}" target="_blank">Find on LinkedIn ↗</a>` : ""}${p.linkedin ? `<a href="${esc(p.linkedin)}" target="_blank">LinkedIn</a>` : ""}${p.phone ? `<a href="tel:${esc(p.phone)}">Call</a>` : ""}</div>
     <div class="actions" style="margin-bottom:16px">
-      ${b(`act({action:'reached_out',id:${id}},'Logged. Follow-up in 3 days.')`, "I reached out", "primary")}
+      <button class="btn small primary" onclick="openDraft(${id})">✉️ Draft email</button>
+      ${b(`act({action:'reached_out',id:${id}},'Logged. Follow-up in 3 days.')`, "I reached out")}
       ${p.status === "waiting" ? b(`act({action:'followed_up',id:${id}},'Follow-up logged')`, "I followed up") : ""}
       ${b(`act({action:'replied',id:${id}},'Great news!')`, "They replied")}
       ${b(`act({action:'met',id:${id}},'Logged. Thank-you due tomorrow.')`, "We talked")}
@@ -255,6 +258,38 @@ function saveAdd() {
   const f = readForm(); if (!f.name.trim()) return toast("Add a name first");
   act({ action: "add", ...f, reachedOut: $("#f_reached").checked, date: $("#f_date").value }, $("#f_reached").checked ? "Added. Follow-up in 3 days." : "Added");
   closeSheet();
+}
+
+// ---------- outreach draft (with resume) ----------
+async function openDraft(id, extra = "") {
+  const p = S.people.find((x) => x.id === id); if (!p) return;
+  if (DEMO) return toast("Drafting works in your real Orbit");
+  openSheet(`<h3>Email to ${esc(p.name)}</h3><p class="sub">Writing a draft…</p>`);
+  const r = await fetch("/api/draft", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, extra }) });
+  const j = await r.json();
+  if (!r.ok) { openSheet(`<h3>Email to ${esc(p.name)}</h3><p class="err">${esc(j.error || "Something went wrong")}</p>`); return; }
+  openSheet(`<h3>Email to ${esc(p.name)}</h3><p class="sub" style="margin-bottom:10px">Your resume gets attached, and your LinkedIn is in the email.</p>
+    <div class="field"><label>To</label><div style="display:flex;gap:8px"><input id="d_to" type="email" value="${esc(p.email || "")}" placeholder="Paste their email">
+      ${p.email ? "" : `<a class="btn small" href="${COLONNADE}" target="_blank" style="white-space:nowrap;align-self:center">Colonnade ↗</a>`}</div></div>
+    <div class="field"><label>Subject</label><input id="d_subject" value="${esc(j.subject)}"></div>
+    <div class="field"><label>Message</label><textarea id="d_body" style="min-height:260px">${esc(j.body)}</textarea></div>
+    <div class="actions">
+      <button class="btn primary" onclick="downloadDraft(${id})">Open as email with resume</button>
+      <button class="btn" onclick="navigator.clipboard.writeText($('#d_body').value);toast('Copied')">Copy text</button>
+      <button class="btn ghost" onclick="act({action:'reached_out',id:${id}},'Logged. Follow-up in 3 days.');closeSheet()">I sent it</button>
+    </div>
+    <div class="field" style="margin-top:14px"><label>Want a different version?</label><div style="display:flex;gap:8px"><input id="d_extra" placeholder="e.g. shorter, mention we met at E-Summit"><button class="btn small" onclick="openDraft(${id}, $('#d_extra').value)">Rewrite</button></div></div>
+    <p class="sub" style="font-size:13px;margin-top:12px">On a laptop, the downloaded file opens in Mail as a ready-to-send draft with your resume attached. On iPhone, use Copy text and attach your resume from Files.</p>`);
+}
+async function downloadDraft(id) {
+  const body = { id, mode: "eml", to: $("#d_to").value, subject: $("#d_subject").value, body: $("#d_body").value };
+  const r = await fetch("/api/draft", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!r.ok) { const j = await r.json().catch(() => ({})); return toast(j.error || "Couldn't make the email"); }
+  const blob = await r.blob(), a = document.createElement("a");
+  const p = S.people.find((x) => x.id === id);
+  a.href = URL.createObjectURL(blob); a.download = `Email to ${p.name}.eml`; document.body.appendChild(a); a.click(); a.remove();
+  if (body.to && !p.email) p.email = body.to;
+  toast("Downloaded. Open it to send from Mail.");
 }
 
 // ---------- copy / email ----------
