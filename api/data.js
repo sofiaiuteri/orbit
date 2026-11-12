@@ -6,7 +6,9 @@ const FIELDS = ["name", "company", "role", "context", "email", "linkedin", "phon
 export async function GET(req) {
   if (!isAuthed(req)) return unauthorized();
   const [people, log] = await Promise.all([
-    sql`SELECT * FROM nudge.people WHERE status <> 'archived' ORDER BY name`,
+    sql`SELECT id, name, company, role, context, email, linkedin, phone, ask, notes, priority, status, followups_sent, stage,
+      last_outreach::text AS last_outreach, last_met::text AS last_met, next_due::text AS next_due
+      FROM nudge.people WHERE status <> 'archived' ORDER BY name`,
     sql`SELECT * FROM nudge.log ORDER BY at DESC LIMIT 400`,
   ]);
   return Response.json({ people, log, today: today(), rules: RULES });
