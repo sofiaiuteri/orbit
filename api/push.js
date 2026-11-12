@@ -30,7 +30,7 @@ export async function POST(req) {
       ON CONFLICT (endpoint) DO UPDATE SET sub = EXCLUDED.sub`;
   }
   if (b.test) {
-    const sent = await notifyAll({ title: "Nudge", body: "Notifications are on. I'll ping you when it's time to follow up.", url: "/" });
+    const sent = await notifyAll({ title: "Orbit", body: "Notifications are on. I'll ping you when it's time to follow up.", url: "/" });
     return Response.json({ sent });
   }
   return Response.json({ ok: true });

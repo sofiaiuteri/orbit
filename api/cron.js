@@ -12,13 +12,13 @@ export async function GET(req) {
     WHERE status='waiting' AND stage='close' AND next_due <= ${t} RETURNING id, name`;
   for (const p of closed) await logEvent(p.id, "no_reply", "No reply after 2 follow-ups. Stopped nudging.");
 
-  const due = await sql`SELECT name, stage, followups_sent FROM nudge.people
+  const due = await sql`SELECT name, stage, hold_reason, followups_sent FROM nudge.people
     WHERE next_due <= ${t} AND status IN ('waiting','replied','keep_warm','to_contact') ORDER BY (priority = 'high') DESC, next_due, name`;
   if (!due.length) return Response.json({ due: 0, closed: closed.length });
 
-  const label = (p) => p.stage === "thanks" ? `${p.name} (thank-you)` : p.stage === "checkin" ? `${p.name} (check in)` : p.stage === "schedule" ? `${p.name} (set a time)` : p.name;
+  const label = (p) => p.stage === "hold" ? `${p.name} (done with ${p.hold_reason || "it"} yet?)` : p.stage === "meeting" ? `${p.name} (how did it go?)` : p.stage === "thanks" ? `${p.name} (thank-you)` : p.stage === "checkin" ? `${p.name} (check in)` : p.stage === "schedule" ? `${p.name} (set a time)` : p.name;
   const names = due.slice(0, 4).map(label).join(", ") + (due.length > 4 ? ` +${due.length - 4} more` : "");
   const body = due.length === 1 ? `Time to follow up with ${names}.` : `${due.length} follow-ups today: ${names}.`;
-  const sent = await notifyAll({ title: "Nudge", body, url: "/", tag: "daily" });
+  const sent = await notifyAll({ title: "Orbit", body, url: "/", tag: "daily" });
   return Response.json({ due: due.length, closed: closed.length, sent });
 }

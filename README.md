@@ -1,8 +1,8 @@
-# Nudge
+# Orbit
 
 A tiny app that tells me who to follow up with today.
 
-Networking falls apart in the follow-up, not the first email. Nudge keeps the rhythm for me:
+Networking falls apart in the follow-up, not the first email. Orbit keeps the rhythm for me:
 
 - **Day 3 to 4 after I reach out:** a friendly follow-up, with the message already drafted
 - **A week later:** one last note

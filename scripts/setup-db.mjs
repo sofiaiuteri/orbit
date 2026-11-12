@@ -15,5 +15,7 @@ await sql`CREATE TABLE IF NOT EXISTS nudge.people (
 await sql`CREATE TABLE IF NOT EXISTS nudge.log (
   id serial PRIMARY KEY, person_id int REFERENCES nudge.people(id) ON DELETE CASCADE,
   at timestamptz NOT NULL DEFAULT now(), kind text NOT NULL, text text NOT NULL)`;
+await sql`ALTER TABLE nudge.people ADD COLUMN IF NOT EXISTS hold_reason text`;
+await sql`ALTER TABLE nudge.people ADD COLUMN IF NOT EXISTS meeting_on date`;
 await sql`CREATE TABLE IF NOT EXISTS nudge.push_subs (endpoint text PRIMARY KEY, sub jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now())`;
 console.log("Tables ready.");

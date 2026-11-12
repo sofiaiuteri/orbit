@@ -1,7 +1,7 @@
 {
-  "name": "Nudge",
-  "short_name": "Nudge",
-  "description": "Who to follow up with, and when.",
+  "name": "Orbit",
+  "short_name": "Orbit",
+  "description": "The people in your orbit, and when to follow up.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f6f5f1",

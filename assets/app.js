@@ -1,4 +1,4 @@
-// Nudge: who to follow up with today. Vanilla JS, no build step.
+// Orbit: who to follow up with today. Vanilla JS, no build step.
 const DEMO = new URLSearchParams(location.search).has("demo");
 const SIGNATURE = "Sofia";
 const CALENDAR = "https://calendly.com/experienceexchangemag/30min";
@@ -43,6 +43,7 @@ function demoAct(b) {
   if (b.action === "snooze") { set({ next_due: addDays(t, b.days || 2) }); return; }
   if (b.action === "no_reply") { set({ status: "no_reply", next_due: null, stage: null }); return; }
   if (b.action === "remind_on") { set({ next_due: b.date, stage: p.stage || "checkin" }); return; }
+  if (b.action === "hold_done") { set({ stage: p.status === "to_contact" ? null : p.status === "waiting" ? "followup" : "checkin", hold_reason: null, next_due: t }); return; }
   if (b.action === "archive") { S.people = S.people.filter((x) => x.id !== b.id); }
 }
 
@@ -51,13 +52,15 @@ const ACTIVE = ["waiting", "replied", "keep_warm", "to_contact"];
 const isDue = (p) => p.next_due && p.next_due <= S.today && ACTIVE.includes(p.status);
 function dueInfo(p) {
   const since = p.last_outreach ? days(p.last_outreach, S.today) : null;
+  if (p.stage === "hold") return { kind: "hold", pill: "Waiting on you", why: `You wanted to ${p.hold_reason || "finish something"} before reaching out to ${first(p.name)}. Is it done?` };
+  if (p.stage === "meeting") return { kind: "meeting", pill: "How did it go?", why: `You had a chat set with ${first(p.name)}${p.meeting_on ? " on " + nice(p.meeting_on) : ""}. Did it happen?` };
   if (p.stage === "close") return { kind: "close", pill: "No reply after 2 follow-ups", why: `You've followed up twice and haven't heard back. Time to let this one go, or try a different channel.` };
   if (p.stage === "schedule") return { kind: "schedule", pill: "They replied", why: `${first(p.name)} got back to you. Lock in a time while it's fresh.` };
   if (p.stage === "thanks") return { kind: "thanks", pill: "Send a thank-you", why: `You talked ${p.last_met ? "on " + nice(p.last_met) : "recently"}. A quick thank-you with one thing you'll act on goes a long way.` };
   if (p.status === "to_contact") return { kind: "reach", pill: "Reach out", why: `You planned to reach out to ${first(p.name)} today.` };
   if (p.stage === "checkin") return { kind: "checkin", pill: "Check in", why: `It's been a while. Share a quick update so ${first(p.name)} remembers you.` };
   const n = p.followups_sent || 0;
-  return { kind: "followup", pill: n === 0 ? `Follow-up #1 · day ${since}` : `Last follow-up · day ${since}`, why: n === 0 ? `No reply yet ${since} days after you reached out. A short, friendly bump is normal.` : `Still no reply. One last short note, then Nudge will stop reminding you.` };
+  return { kind: "followup", pill: n === 0 ? `Follow-up #1 · day ${since}` : `Last follow-up · day ${since}`, why: n === 0 ? `No reply yet ${since} days after you reached out. A short, friendly bump is normal.` : `Still no reply. One last short note, then Orbit will stop reminding you.` };
 }
 function draft(p, kind) {
   const f = first(p.name), ask = p.ask || "find a time to chat";
@@ -74,7 +77,8 @@ const nextStep = (p) => { const m = (p.notes || "").match(/^Next step: (.*)$/m);
 // ---------- views ----------
 function render() {
   document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
-  $("#view").innerHTML = tab === "today" ? viewToday() : tab === "waiting" ? viewWaiting() : viewPeople();
+  document.body.classList.toggle("wide", tab === "overview");
+  $("#view").innerHTML = commandBar() + (tab === "today" ? viewToday() : tab === "waiting" ? viewWaiting() : viewOverview());
 }
 
 function viewToday() {
@@ -82,7 +86,7 @@ function viewToday() {
   const soon = S.people.filter((p) => p.next_due && p.next_due > S.today && p.next_due <= addDays(S.today, 7) && ACTIVE.includes(p.status)).sort((a, b) => a.next_due.localeCompare(b.next_due));
   const dateLabel = new Date(S.today + "T12:00:00Z").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: "UTC" });
   let h = notifBanner();
-  h += `<h1>${due.length ? `${due.length} to do today` : "You're all caught up"}</h1><p class="sub">${dateLabel}</p>`;
+  h += `<h1 class="title">${due.length ? `${due.length} to do today` : "You're all caught up"}</h1><p class="sub">${dateLabel}</p>`;
   if (!due.length) h += `<div class="empty"><b>Nothing due.</b>Add someone you want to meet, or check who's coming up.</div>`;
   for (const p of due) {
     const d = dueInfo(p), msg = draft(p, d.kind);
@@ -110,14 +114,16 @@ function actionsFor(p, kind, hasMsg) {
   if (kind === "schedule") return copy + mail + b(`act({action:'met',id:${id}},'Logged. Thank-you due tomorrow.')`, "We had the chat", "primary") + b(`act({action:'snooze',id:${id},days:3},'Snoozed 3 days')`, "Time is set, remind me later", "ghost") + open;
   if (kind === "thanks") return copy + mail + b(`act({action:'thanked',id:${id}},'Thank-you logged. Check-in in 2 months.')`, "I sent it", "primary") + snooze + open;
   if (kind === "checkin") return copy + mail + b(`act({action:'checked_in',id:${id}},'Logged. Next check-in in 2 months.')`, "I checked in", "primary") + b(`act({action:'snooze',id:${id},days:14},'Back in 2 weeks')`, "Later", "ghost") + open;
+  if (kind === "hold") return b(`act({action:'hold_done',id:${id}},'Nice work! Follow-up is on today.')`, "It's done, follow up now", "primary") + b(`act({action:'snooze',id:${id},days:21},'Okay, I'll ask again in 3 weeks')`, "Not yet") + open;
+  if (kind === "meeting") return b(`act({action:'met',id:${id}},'Logged. Thank-you due tomorrow.')`, "We talked", "primary") + b(`act({action:'snooze',id:${id},days:3},'Snoozed 3 days')`, "It moved", "ghost") + open;
   if (kind === "reach") return b(`act({action:'reached_out',id:${id}},'Logged. Follow-up in 3 days.')`, "I reached out", "primary") + snooze + open;
   return open;
 }
 
 function viewWaiting() {
   const w = S.people.filter((p) => p.status === "waiting" || p.status === "replied").sort((a, b) => (a.next_due || "9").localeCompare(b.next_due || "9"));
-  let h = `<h1>Waiting to hear back</h1><p class="sub">Follow-up #1 on day 3 to 4, then one more a week later, then Nudge stops.</p>`;
-  if (!w.length) h += `<div class="empty"><b>No one's waiting on a reply.</b>When you reach out to someone, mark it and Nudge starts the clock.</div>`;
+  let h = `<h1>Waiting to hear back</h1><p class="sub">Follow-up #1 on day 3 to 4, then one more a week later, then Orbit stops.</p>`;
+  if (!w.length) h += `<div class="empty"><b>No one's waiting on a reply.</b>When you reach out to someone, mark it and Orbit starts the clock.</div>`;
   for (const p of w) {
     const since = p.last_outreach ? days(p.last_outreach, S.today) : 0;
     const label = p.status === "replied" ? "replied" : `day ${since} · ${p.followups_sent || 0}/2 follow-ups`;
@@ -127,6 +133,58 @@ function viewWaiting() {
 }
 
 const STATUS = { to_contact: "To reach out", waiting: "Waiting", replied: "Replied", keep_warm: "Keep warm", no_reply: "No reply" };
+
+// ---------- command bar ----------
+let lastResult = null;
+function commandBar() {
+  return `<form class="cmd" onsubmit="runCommand(event)">
+    <textarea id="cmdText" rows="1" placeholder="Tell Orbit what happened…" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();runCommand(event)}"></textarea>
+    <button class="btn primary" id="cmdBtn">Do it</button></form>
+    ${!lastResult ? `<div class="hint">Try: “Ted Elliott: follow up once I finish the AI certification” or “Ivan replied, coffee next Wednesday”</div>` : ""}
+    ${lastResult ? `<div class="result ${lastResult.ok ? "" : "warn"}"><span>${esc(lastResult.text)}</span><button class="x" onclick="lastResult=null;render()">×</button></div>` : ""}`;
+}
+async function runCommand(e) {
+  e.preventDefault();
+  const text = $("#cmdText").value.trim(); if (!text) return;
+  if (DEMO) { lastResult = { ok: false, text: "Typing commands works in your real Orbit. In the demo, use the buttons." }; return render(); }
+  const btn = $("#cmdBtn"); btn.disabled = true; btn.textContent = "Working…";
+  try {
+    const r = await fetch("/api/command", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+    const j = await r.json();
+    if (!r.ok) { lastResult = { ok: false, text: j.error || "Something went wrong" }; return render(); }
+    if (j.people) { S.people = j.people; S.log = j.log; S.today = j.today; }
+    if (j.plan?.question) lastResult = { ok: false, text: j.plan.question };
+    else lastResult = { ok: !(j.errors || []).length, text: (j.plan?.reply || "Done.") + ((j.errors || []).length ? " (Some steps failed: " + j.errors.join("; ") + ")" : "") };
+    render();
+    if (j.plan?.question) { $("#cmdText").value = text + " "; $("#cmdText").focus(); }
+  } catch { lastResult = { ok: false, text: "Couldn't reach Orbit. Check your connection." }; render(); }
+}
+
+// ---------- overview board ----------
+function viewOverview() {
+  const q = query.toLowerCase();
+  const match = (p) => !q || [p.name, p.company, p.role, p.context, p.notes, p.hold_reason].join(" ").toLowerCase().includes(q);
+  const ppl = S.people.filter(match);
+  const since = (p) => p.last_outreach ? days(p.last_outreach, S.today) : null;
+  const cols = [
+    { key: "due", title: "Due today", list: ppl.filter(isDue), meta: (p) => dueInfo(p).pill },
+    { key: "them", title: "Waiting on them", list: ppl.filter((p) => p.status === "waiting" && p.stage !== "hold" && !isDue(p)), meta: (p) => `day ${since(p) ?? "?"} · ${p.followups_sent || 0}/2` },
+    { key: "you", title: "Waiting on you", list: ppl.filter((p) => p.stage === "hold" && !isDue(p)), meta: (p) => p.hold_reason || "" },
+    { key: "replied", title: "Replied / chat set", list: ppl.filter((p) => p.status === "replied" && !isDue(p)), meta: (p) => p.meeting_on ? "chat " + nice(p.meeting_on) : "replied" },
+    { key: "reach", title: "To reach out", list: ppl.filter((p) => p.status === "to_contact" && p.stage !== "hold" && !isDue(p)), meta: (p) => p.next_due ? nice(p.next_due) : "" },
+    { key: "warm", title: "Keep warm", list: ppl.filter((p) => p.status === "keep_warm" && p.stage !== "hold" && !isDue(p)), meta: (p) => p.next_due ? "next " + nice(p.next_due) : "" },
+    { key: "noreply", title: "No reply", list: ppl.filter((p) => p.status === "no_reply"), meta: () => "" },
+  ];
+  const sortBy = { due: (a, b) => (a.next_due || "").localeCompare(b.next_due || ""), them: (a, b) => (a.last_outreach || "").localeCompare(b.last_outreach || "") };
+  let h = `<div class="ov-head"><h1 class="title">Overview</h1><span class="sub">${S.people.length} people</span>
+    <input class="search small" placeholder="Search…" value="${esc(query)}" oninput="query=this.value;const c=this.selectionStart;render();const s=$('.ov-head .search');s.focus();s.setSelectionRange(c,c)"></div><div class="board">`;
+  for (const c of cols) {
+    const list = c.list.slice().sort(sortBy[c.key] || ((a, b) => a.name.localeCompare(b.name)));
+    h += `<section class="col col-${c.key}"><header>${c.title}<span>${list.length}</span></header>${list.map((p) =>
+      `<div class="mini" onclick="openPerson(${p.id})" title="${esc([p.name, p.role, p.company].filter(Boolean).join(" · "))}"><span class="nm">${esc(p.name)}${p.priority === "high" ? " ★" : ""}</span><span class="co">${esc(p.company || p.context || "")}</span><span class="mt">${esc(c.meta(p))}</span></div>`).join("") || `<div class="none">None</div>`}</section>`;
+  }
+  return h + `</div>`;
+}
 function viewPeople() {
   let list = S.people.filter((p) => filter === "all" || p.status === filter);
   if (query) { const q = query.toLowerCase(); list = list.filter((p) => [p.name, p.company, p.role, p.context, p.notes].join(" ").toLowerCase().includes(q)); }
@@ -169,7 +227,7 @@ function openPerson(id) {
     <div class="field"><label>Remind me on</label><div style="display:flex;gap:8px"><input type="date" id="remindDate" value="${p.next_due || addDays(S.today, 14)}"><button class="btn small" onclick="act({action:'remind_on',id:${id},date:$('#remindDate').value},'Reminder set');closeSheet()">Set</button></div></div>
     ${formHTML(p)}
     <div class="actions"><button class="btn primary" onclick="saveEdit(${id})">Save</button><button class="btn ghost" onclick="closeSheet()">Close</button>
-      <button class="btn ghost danger" style="margin-left:auto" onclick="if(confirm('Remove ${esc(p.name.replace(/['"]/g, ""))} from Nudge?')){act({action:'archive',id:${id}},'Removed');closeSheet()}">Remove</button></div>
+      <button class="btn ghost danger" style="margin-left:auto" onclick="if(confirm('Remove ${esc(p.name.replace(/['"]/g, ""))} from Orbit?')){act({action:'archive',id:${id}},'Removed');closeSheet()}">Remove</button></div>
     ${log.length ? `<h2>History</h2><div class="timeline">${log.map((l) => `<div>${esc(l.text)}<span>${new Date(l.at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span></div>`).join("")}</div>` : ""}
   `);
 }
@@ -187,7 +245,7 @@ const readForm = () => Object.fromEntries(FORM_KEYS.map((k) => [k, $("#f_" + k).
 function saveEdit(id) { act({ action: "edit", id, ...readForm() }, "Saved"); closeSheet(); }
 
 function openAdd() {
-  openSheet(`<h3>Add someone</h3><p class="sub" style="margin-bottom:12px">Nudge will remind you to follow up 3 days after you reach out.</p>
+  openSheet(`<h3>Add someone</h3><p class="sub" style="margin-bottom:12px">Orbit will remind you to follow up 3 days after you reach out.</p>
     ${formHTML({})}
     <label class="check"><input type="checkbox" id="f_reached" checked> I already reached out on <input type="date" id="f_date" value="${S.today}" style="margin-left:6px;padding:4px 6px;border:1px solid var(--line);border-radius:8px"></label>
     <div class="actions"><button class="btn primary" onclick="saveAdd()">Add</button><button class="btn ghost" onclick="closeSheet()">Cancel</button></div>`);
@@ -212,7 +270,7 @@ const standalone = matchMedia("(display-mode: standalone)").matches || navigator
 function notifBanner() {
   if (DEMO || !("serviceWorker" in navigator)) return "";
   if (localStorage.nudgeNotifs === "on" && Notification.permission === "granted") return "";
-  if (isIOS && !standalone) return `<div class="banner"><span>Want phone reminders? Tap <b>Share</b> → <b>Add to Home Screen</b>, then open Nudge from your home screen.</span></div>`;
+  if (isIOS && !standalone) return `<div class="banner"><span>Want phone reminders? Tap <b>Share</b> → <b>Add to Home Screen</b>, then open Orbit from your home screen.</span></div>`;
   if (!("PushManager" in window)) return "";
   return `<div class="banner"><span>Get a phone notification when it's time to follow up.</span><button class="btn small primary" onclick="enableNotifs()">Turn on</button></div>`;
 }
@@ -240,3 +298,4 @@ document.querySelectorAll("#tabs button").forEach((b) => (b.onclick = () => { ta
 $("#addBtn").onclick = openAdd;
 if ("serviceWorker" in navigator && !DEMO) navigator.serviceWorker.register("/sw.js");
 load();
+if (location.hash === "#ov") { tab = "overview"; setTimeout(render, 50); }

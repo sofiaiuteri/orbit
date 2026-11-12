@@ -9,6 +9,8 @@ window.NUDGE_DEMO = (() => {
     { id: 4, name: "Sam Ortiz", company: "Brightline Media", role: "Founder", context: "Podcast guest", email: "sam@example.com", ask: "", status: "keep_warm", last_met: d(-1), next_due: d(0), stage: "thanks", priority: "normal" },
     { id: 5, name: "Lena Fischer", company: "Greenfield Energy", role: "Analyst", context: "Friend of a friend", email: "lena@example.com", ask: "hear about climate finance", status: "waiting", last_outreach: d(-1), followups_sent: 0, next_due: d(2), stage: "followup", priority: "normal" },
     { id: 6, name: "Chris Park", company: "Orbit Labs", role: "Engineer", context: "Hackathon teammate", email: "", ask: "", status: "to_contact", next_due: null, stage: null, priority: "normal" },
+    { id: 8, name: "Ted Alvarez", company: "Copado", role: "Recruiter", context: "Spoke at club event", email: "ted@example.com", ask: "", status: "keep_warm", next_due: d(12), stage: "hold", hold_reason: "finish the AI certification", priority: "normal" },
+    { id: 9, name: "Nora Patel", company: "Seaside Ventures", role: "Partner", context: "Alumni", email: "nora@example.com", ask: "", status: "replied", next_due: d(5), stage: "meeting", meeting_on: d(4), priority: "high" },
     { id: 7, name: "Dana Brooks", company: "Harbor Partners", role: "VP", context: "Alumni panel", email: "dana@example.com", ask: "", status: "no_reply", last_outreach: d(-20), followups_sent: 2, next_due: null, stage: null, priority: "normal" },
   ];
   const log = [
