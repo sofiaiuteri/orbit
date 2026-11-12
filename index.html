@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#f6f5f1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Nudge">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/assets/icon-192.png">
+<link rel="icon" href="/assets/icon-192.png">
+<link rel="stylesheet" href="/assets/style.css">
+<title>Nudge</title>
+</head>
+<body>
+<div id="login" class="login hidden">
+  <form id="loginForm">
+    <div class="logo">Nudge</div>
+    <p>Who to follow up with, and when.</p>
+    <input id="pw" type="password" placeholder="Password" autocomplete="current-password">
+    <button class="btn primary">Log in</button>
+    <div id="loginErr" class="err"></div>
+    <a class="demo-link" href="/?demo=1">See a demo with sample data</a>
+  </form>
+</div>
+
+<div id="app" class="hidden">
+  <header class="top">
+    <div class="brand">Nudge</div>
+    <nav id="tabs">
+      <button data-tab="today" class="on">Today</button>
+      <button data-tab="waiting">Waiting</button>
+      <button data-tab="people">People</button>
+    </nav>
+    <button id="addBtn" class="btn primary small">+ Add</button>
+  </header>
+  <div id="demoBar" class="demo-bar hidden">Demo with made-up people. Nothing is saved.</div>
+  <main id="view"></main>
+</div>
+
+<div id="sheet" class="sheet hidden"><div class="sheet-card" id="sheetCard"></div></div>
+<div id="toast" class="toast"></div>
+<script src="/assets/demo.js"></script>
+<script src="/assets/app.js"></script>
+</body>
+</html>

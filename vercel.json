@@ -1,0 +1,6 @@
+{
+  "crons": [{ "path": "/api/cron", "schedule": "30 12 * * *" }],
+  "headers": [
+    { "source": "/(.*)", "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }] }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "name": "nudge",
+  "private": true,
+  "type": "module",
+  "description": "A tiny networking follow-up app: who to follow up with today, with phone reminders.",
+  "scripts": {
+    "setup-db": "node --env-file=.env.local scripts/setup-db.mjs"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.0.0",
+    "web-push": "^3.6.7"
+  }
+}
