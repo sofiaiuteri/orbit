@@ -1,6 +1,34 @@
 {
-  "crons": [{ "path": "/api/scout", "schedule": "0 11 * * *" }, { "path": "/api/cron", "schedule": "30 12 * * *" }],
+  "crons": [
+    {
+      "path": "/api/scout",
+      "schedule": "0 11 * * *"
+    },
+    {
+      "path": "/api/cron",
+      "schedule": "30 12 * * *"
+    }
+  ],
   "headers": [
-    { "source": "/(.*)", "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }] }
-  ]
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow"
+        }
+      ]
+    }
+  ],
+  "functions": {
+    "api/scout.js": {
+      "maxDuration": 300
+    },
+    "api/command.js": {
+      "maxDuration": 60
+    },
+    "api/draft.js": {
+      "maxDuration": 60
+    }
+  }
 }
