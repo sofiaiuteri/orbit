@@ -122,3 +122,4 @@ a.btn{text-decoration:none;display:inline-block}
 .row.task{cursor:default}.row.task input{width:18px;height:18px;accent-color:var(--accent);flex:none}.row.task.done .name{text-decoration:line-through;color:var(--muted)}
 .count.late{color:var(--red)}.proj .row{margin:6px 0}.addtask{display:flex;gap:6px;margin-top:8px}.addtask input{flex:1;padding:8px 10px;border:1px solid var(--line);border-radius:9px;font:inherit;font-size:15px}.addtask input[type=date]{flex:none;width:150px}
 .col-idea .mini .mt{color:var(--accent)}
+.catchup{margin-top:18px}.catchup summary{cursor:pointer;color:var(--muted);font-size:14.5px;font-weight:600;margin-bottom:6px}

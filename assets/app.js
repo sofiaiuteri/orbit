@@ -101,7 +101,7 @@ function viewToday() {
   const soon = S.people.filter((p) => p.next_due && p.next_due > S.today && p.next_due <= addDays(S.today, 7) && ACTIVE.includes(p.status)).sort((a, b) => a.next_due.localeCompare(b.next_due));
   const dateLabel = new Date(S.today + "T12:00:00Z").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: "UTC" });
   let h = notifBanner();
-  const nWork = dueJobs().length + dueTasks().length;
+  const nWork = dueJobs().length + dueTasks().filter((t) => t.due_date >= addDays(S.today, -3)).length;
   h += `<h1 class="title">${due.length + nWork ? `${due.length + nWork} to do today` : "You're all caught up"}</h1><p class="sub">${dateLabel}</p>`;
   if (due.length) h += `<h2>People</h2>`;
   for (const p of due) {
@@ -188,7 +188,10 @@ function todayWork() {
         <button class="btn small ghost" onclick="openJob(${j.id})">Details</button></div></div>`;
     }
   }
-  if (td.length) { h += `<h2>Project tasks</h2>`; h += td.map((t) => taskRow(t, true)).join(""); }
+  const cutoff = addDays(S.today, -3);
+  const recent = td.filter((t) => t.due_date >= cutoff), older = td.filter((t) => t.due_date < cutoff);
+  if (recent.length) { h += `<h2>Project tasks</h2>`; h += recent.map((t) => taskRow(t, true)).join(""); }
+  if (older.length) h += `<details class="catchup"><summary>Catch up: ${older.length} older ${older.length === 1 ? "task" : "tasks"} (tick off or ignore)</summary>${older.map((t) => taskRow(t, true)).join("")}</details>`;
   return h;
 }
 function viewJobs() {
