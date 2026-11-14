@@ -46,7 +46,7 @@ function demoAct(b) {
   if (b.action === "no_reply") { set({ status: "no_reply", next_due: null, stage: null }); return; }
   if (b.action === "remind_on") { set({ next_due: b.date, stage: p.stage || "checkin" }); return; }
   if (b.action === "hold_done") { set({ stage: p.status === "to_contact" ? null : p.status === "waiting" ? "followup" : "checkin", hold_reason: null, next_due: t }); return; }
-  if (/^(job_|task_|project_)/.test(b.action)) {
+  if (/^(job_|task_|project_|idea_)/.test(b.action)) {
     const j = S.jobs.find((x) => x.id === b.id), tk = S.tasks.find((x) => x.id === b.id);
     if (b.action === "job_status" && j) Object.assign(j, { status: b.status, ...(b.status === "Applied" ? { applied_date: t, next_action: "Follow up if no reply", next_action_date: addDays(t, 10) } : {}) });
     if (b.action === "job_next" && j) Object.assign(j, { next_action: b.next_action, next_action_date: b.date || null });
@@ -56,6 +56,7 @@ function demoAct(b) {
     if (b.action === "task_add") S.tasks.push({ id: Date.now(), project_id: b.project_id, title: b.title, due_date: b.date || null, done: false });
     if (b.action === "project_add") S.projects.push({ id: Date.now(), name: b.name, notes: b.notes });
     if (b.action === "project_done") S.projects = S.projects.filter((x) => x.id !== b.id);
+    if (b.action.startsWith("idea_")) { const i = S.ideas.find((x) => x.id === b.id); if (i) i.status = { idea_save: "saved", idea_dismiss: "dismissed", idea_project: "project", idea_new: "new" }[b.action]; S.ideas = S.ideas.filter((x) => x.status !== "dismissed"); }
     return;
   }
   if (b.action === "archive") { S.people = S.people.filter((x) => x.id !== b.id); }
@@ -92,8 +93,8 @@ const nextStep = (p) => { const m = (p.notes || "").match(/^Next step: (.*)$/m);
 function render() {
   document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
   document.body.classList.toggle("wide", tab === "overview" || tab === "jobs");
-  S.jobs ||= []; S.projects ||= []; S.tasks ||= [];
-  $("#view").innerHTML = commandBar() + (tab === "today" ? viewToday() : tab === "jobs" ? viewJobs() : tab === "projects" ? viewProjects() : tab === "waiting" ? viewWaiting() : viewOverview());
+  S.jobs ||= []; S.projects ||= []; S.tasks ||= []; S.ideas ||= [];
+  $("#view").innerHTML = commandBar() + (tab === "today" ? viewToday() : tab === "jobs" ? viewJobs() : tab === "projects" ? viewProjects() : tab === "ideas" ? viewIdeas() : tab === "waiting" ? viewWaiting() : viewOverview());
 }
 
 function viewToday() {
@@ -259,6 +260,42 @@ function openAddProject() {
   openSheet(`<h3>New project</h3><div class="field"><label>Name</label><input id="ap_name"></div><div class="field"><label>Notes</label><textarea id="ap_notes"></textarea></div>
     <div class="actions"><button class="btn primary" onclick="act({action:'project_add',name:$('#ap_name').value,notes:$('#ap_notes').value},'Project added');closeSheet()">Add</button><button class="btn ghost" onclick="closeSheet()">Cancel</button></div>`);
   setTimeout(() => $("#ap_name").focus(), 50);
+}
+
+// ---------- ideas (from the daily Idea Scout) ----------
+let ideaFilter = "new";
+const SAT = ["", "Wide open", "Few players", "Some players", "Crowded", "Very crowded"];
+const dots = (v) => "●".repeat(v) + `<span style="color:#d3d9dc">${"●".repeat(5 - v)}</span>`;
+function viewIdeas() {
+  const list = S.ideas.filter((i) => ideaFilter === "all" || (ideaFilter === "saved" ? ["saved", "project"].includes(i.status) : i.status === "new"));
+  const newest = S.ideas.length ? S.ideas.map((i) => i.run_date).sort().pop() : null;
+  let h = `<div class="ov-head"><h1 class="title">Ideas</h1><span class="sub">Your Idea Scout researches 10 new startup ideas every morning${newest ? " · latest " + nice(newest) : ""}</span></div>
+    <div class="filters">${[["new", "New"], ["saved", "Saved ★"], ["all", "All"]].map(([k, l]) => `<button class="${ideaFilter === k ? "on" : ""}" onclick="ideaFilter='${k}';render()">${l} (${S.ideas.filter((i) => k === "all" || (k === "saved" ? ["saved", "project"].includes(i.status) : i.status === "new")).length})</button>`).join("")}
+    ${DEMO ? "" : `<button onclick="runScout(this)">Find 10 more now</button>`}</div>`;
+  if (!list.length) h += `<div class="empty"><b>${ideaFilter === "saved" ? "No saved ideas yet." : "No new ideas right now."}</b>${ideaFilter === "saved" ? "Tap ★ on an idea to keep it." : "New ones arrive every morning around 6 AM."}</div>`;
+  let lastDate = "";
+  for (const i of list) {
+    if (i.run_date !== lastDate) { h += `<h2>${nice(i.run_date)}</h2>`; lastDate = i.run_date; }
+    const comps = (i.competitors || []).map((c) => `${esc(c.name)} (${esc(c.note)})`).join("; ");
+    const srcs = (i.sources || []).map((x) => `<a href="${esc(x.url)}" target="_blank">${esc(x.label)}${x.date ? ", " + esc(x.date) : ""}</a>`).join(" · ");
+    h += `<details class="card idea"><summary><div class="who"><div><div class="name">${i.status === "saved" || i.status === "project" ? "★ " : ""}${esc(i.title)}</div><div class="meta">${esc(i.sector || "")} · ${esc(i.pitch || "")}</div></div>
+      <span class="pill ${i.score >= 75 ? "" : "gray"}">${i.score}</span></div></summary>
+      <div class="mini-scores">Importance ${dots(i.importance)} · Profit ${dots(i.profit)} · You can do it ${dots(i.execution)} · Market: <b>${SAT[i.saturation] || ""}</b></div>
+      <dl class="ideadl"><dt>Why now</dt><dd>${esc(i.why_now)}</dd><dt>The pain</dt><dd>${esc(i.pain)}</dd><dt>User · buyer</dt><dd>${esc(i.user_desc)} · ${esc(i.buyer)}</dd>
+      <dt>First offer</dt><dd>${esc(i.first_offer)}</dd><dt>Grows into</dt><dd>${esc(i.grows_into)}</dd><dt>Already doing it</dt><dd>${comps || "No clear players found"}</dd>
+      <dt>Test it</dt><dd>Talk to ${esc(i.test_who)}:<ul>${(i.test_questions || []).map((q) => `<li>"${esc(q)}"</li>`).join("")}</ul><b>Bad sign:</b> ${esc(i.bad_sign)}</dd></dl>
+      <div class="m" style="font-size:12.5px;margin:6px 0">${srcs}</div>
+      <div class="actions">${i.status === "project" ? `<span class="pill">Turned into a project</span>` : `<button class="btn small primary" onclick="act({action:'idea_project',id:${i.id}},'Project created with 3 test tasks')">Test it (make a project)</button>`}
+      ${i.status === "new" ? `<button class="btn small" onclick="act({action:'idea_save',id:${i.id}},'Saved ★')">★ Save</button>` : ""}
+      <button class="btn small ghost" onclick="act({action:'idea_dismiss',id:${i.id}},'Dismissed')">Not for me</button></div></details>`;
+  }
+  return h;
+}
+async function runScout(btn) {
+  btn.disabled = true; btn.textContent = "Researching… (about 3 min)";
+  const r = await fetch("/api/scout", { method: "POST" }); const j = await r.json().catch(() => ({}));
+  if (!r.ok) { toast(j.error || "Scout failed"); btn.disabled = false; btn.textContent = "Find 10 more now"; return; }
+  toast(`${j.saved} new ideas`); await load();
 }
 
 // ---------- command bar ----------
@@ -458,4 +495,4 @@ document.querySelectorAll("#tabs button").forEach((b) => (b.onclick = () => { ta
 $("#addBtn").onclick = () => (tab === "jobs" ? openAddJob() : tab === "projects" ? openAddProject() : openAdd());
 if ("serviceWorker" in navigator && !DEMO) navigator.serviceWorker.register("/sw.js");
 load();
-if (location.hash.length > 1) { tab = ({ "#ov": "overview", "#jobs": "jobs", "#projects": "projects" })[location.hash] || tab; setTimeout(render, 50); }
+if (location.hash.length > 1) { tab = ({ "#ov": "overview", "#jobs": "jobs", "#projects": "projects", "#ideas": "ideas" })[location.hash] || tab; setTimeout(render, 50); }

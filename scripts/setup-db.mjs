@@ -18,4 +18,10 @@ await sql`CREATE TABLE IF NOT EXISTS nudge.log (
 await sql`ALTER TABLE nudge.people ADD COLUMN IF NOT EXISTS hold_reason text`;
 await sql`ALTER TABLE nudge.people ADD COLUMN IF NOT EXISTS meeting_on date`;
 await sql`CREATE TABLE IF NOT EXISTS nudge.push_subs (endpoint text PRIMARY KEY, sub jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now())`;
+await sql`CREATE TABLE IF NOT EXISTS nudge.ideas (
+  id serial PRIMARY KEY, run_date date NOT NULL, created_at timestamptz NOT NULL DEFAULT now(),
+  title text NOT NULL, sector text, pitch text, user_desc text, buyer text, why_now text, pain text, first_offer text, grows_into text,
+  competitors jsonb, saturation int, importance int, profit int, execution int, score int,
+  test_who text, test_questions jsonb, bad_sign text, sources jsonb,
+  status text NOT NULL DEFAULT 'new', notes text)`;
 console.log("Tables ready.");

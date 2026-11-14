@@ -194,7 +194,29 @@ export async function applyTaskAction(b) {
   }
 }
 
+export async function applyIdeaAction(b) {
+  const id = Number(b.id) || null;
+  const [idea] = id ? await sql`SELECT * FROM nudge.ideas WHERE id = ${id}` : [null];
+  if (!idea) throw new Error("Idea not found");
+  if (b.action === "idea_save") { await sql`UPDATE nudge.ideas SET status='saved' WHERE id=${id}`; return id; }
+  if (b.action === "idea_dismiss") { await sql`UPDATE nudge.ideas SET status='dismissed' WHERE id=${id}`; return id; }
+  if (b.action === "idea_new") { await sql`UPDATE nudge.ideas SET status='new' WHERE id=${id}`; return id; }
+  if (b.action === "idea_project") {
+    const [p] = await sql`INSERT INTO career.projects (name, status, notes, sort) VALUES (${"Idea: " + idea.title}, 'Active', ${idea.pitch}, 50) RETURNING id`;
+    const t = today();
+    const qs = (idea.test_questions || []).join(" / ");
+    await sql`INSERT INTO career.tasks (project_id, title, due_date, done) VALUES
+      (${p.id}, ${"List 5 people to talk to: " + (idea.test_who || "potential customers")}, ${addDays(t, 2)}, false),
+      (${p.id}, ${"Have 3 customer conversations. Ask: " + qs}, ${addDays(t, 7)}, false),
+      (${p.id}, ${"Decide: keep going or drop it? Watch for: " + (idea.bad_sign || "weak pain")}, ${addDays(t, 10)}, false)`;
+    await sql`UPDATE nudge.ideas SET status='project' WHERE id=${id}`;
+    return id;
+  }
+  throw new Error("Unknown idea action");
+}
+
 export async function applyAny(b) {
+  if (String(b.action || "").startsWith("idea_")) return applyIdeaAction(b);
   if (String(b.action || "").startsWith("job_")) return applyJobAction(b);
   if (/^(task_|project_)/.test(String(b.action || ""))) return applyTaskAction(b);
   return applyAction(b);

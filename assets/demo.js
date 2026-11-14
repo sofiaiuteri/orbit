@@ -32,5 +32,6 @@ window.NUDGE_DEMO = (() => {
     { id: 3, project_id: 2, title: "Write 15 eval cases", done: false, due_date: d(1) },
     { id: 4, project_id: 2, title: "Read Building effective agents", done: true, done_at: d(-1) },
   ];
-  return { people, log, jobs, projects, tasks, today: d(0), rules: { first: 3, second: 7, closeAfter: 7, maxFollowups: 2, thanks: 1, checkin: 60 } };
+  const ideas = [{ id: 1, run_date: d(0), status: "new", title: "Rental registration filing service", sector: "Travel", pitch: "File short-term rental registrations and renewals for small hosts as local rules change.", user_desc: "Small hosts", buyer: "Hosts", why_now: "New city ordinances with fall deadlines.", pain: "Hosts miss deadlines and get fined.", first_offer: "$99 per filing.", grows_into: "Compliance for property managers", competitors: [{ name: "Example Co", note: "serves big managers" }], saturation: 3, importance: 4, profit: 3, execution: 5, score: 78, test_who: "small rental hosts", test_questions: ["When did you last file a registration?", "Who did it for you?"], bad_sign: "They find it easy.", sources: [] }];
+  return { people, log, jobs, projects, tasks, ideas, today: d(0), rules: { first: 3, second: 7, closeAfter: 7, maxFollowups: 2, thanks: 1, checkin: 60 } };
 })();

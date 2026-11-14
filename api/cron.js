@@ -17,13 +17,15 @@ export async function GET(req) {
   const jobs = await sql`SELECT firm, next_action FROM career.applications WHERE status NOT IN ('Closed','Withdrawn','Rejected')
     AND (next_action_date <= ${t} OR (deadline_date BETWEEN ${t} AND (${t}::date + 3) AND status IN ('Idea','Not started')))`;
   const tasks = await sql`SELECT title FROM career.tasks WHERE done = false AND due_date <= ${t}`;
-  if (!due.length && !jobs.length && !tasks.length) return Response.json({ due: 0, closed: closed.length });
+  const ideas = await sql`SELECT title FROM nudge.ideas WHERE run_date = ${t} AND status = 'new' ORDER BY score DESC`;
+  if (!due.length && !jobs.length && !tasks.length && !ideas.length) return Response.json({ due: 0, closed: closed.length });
 
   const label = (p) => p.stage === "hold" ? `${p.name} (done with ${p.hold_reason || "it"} yet?)` : p.stage === "meeting" ? `${p.name} (how did it go?)` : p.stage === "thanks" ? `${p.name} (thank-you)` : p.stage === "checkin" ? `${p.name} (check in)` : p.stage === "schedule" ? `${p.name} (set a time)` : p.name;
   const parts = [];
   if (due.length) parts.push(`${due.length} ${due.length === 1 ? "follow-up" : "follow-ups"}: ${due.slice(0, 3).map(label).join(", ")}${due.length > 3 ? ` +${due.length - 3}` : ""}`);
   if (jobs.length) parts.push(`${jobs.length} job ${jobs.length === 1 ? "step" : "steps"}: ${jobs.slice(0, 2).map((j) => j.firm).join(", ")}${jobs.length > 2 ? ` +${jobs.length - 2}` : ""}`);
   if (tasks.length) parts.push(`${tasks.length} ${tasks.length === 1 ? "task" : "tasks"} due`);
+  if (ideas.length) parts.push(`${ideas.length} new ideas, top: ${ideas[0].title}`);
   const body = parts.join(" · ") + ".";
   const sent = await notifyAll({ title: "Orbit", body, url: "/", tag: "daily" });
   return Response.json({ due: due.length, jobs: jobs.length, tasks: tasks.length, closed: closed.length, sent });
