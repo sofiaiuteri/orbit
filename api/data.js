@@ -9,7 +9,7 @@ export async function loadState() {
         FROM nudge.people WHERE status <> 'archived' ORDER BY name`,
     sql`SELECT person_id, at, kind, text FROM nudge.log ORDER BY at DESC LIMIT 500`,
   ]);
-  const ideas = await sql`SELECT *, run_date::text AS run_date FROM nudge.ideas WHERE status <> 'dismissed' AND (status IN ('saved','project') OR run_date >= (now() - interval '21 days')::date) ORDER BY run_date DESC, score DESC`;
+  const ideas = await sql`SELECT id, title, sector, pitch, user_desc, buyer, why_now, pain, first_offer, grows_into, competitors, saturation, importance, profit, execution, score, test_who, test_questions, bad_sign, sources, status, run_date::text AS run_date FROM nudge.ideas WHERE status <> 'dismissed' AND (status IN ('saved','project') OR run_date >= (now() - interval '21 days')::date) ORDER BY 22 DESC, score DESC`;
   const [jobs, projects, tasks] = await Promise.all([
     sql`SELECT id, firm, role, category, status, link, notes, next_action, deadline,
           deadline_date::text AS deadline_date, applied_date::text AS applied_date, next_action_date::text AS next_action_date
