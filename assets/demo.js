@@ -19,5 +19,18 @@ window.NUDGE_DEMO = (() => {
     { person_id: 3, at: d(-1) + "T15:00:00Z", kind: "replied", text: "They replied." },
     { person_id: 4, at: d(-1) + "T15:00:00Z", kind: "met", text: "Had the chat." },
   ];
-  return { people, log, today: d(0), rules: { first: 3, second: 7, closeAfter: 7, maxFollowups: 2, thanks: 1, checkin: 60 } };
+  const jobs = [
+    { id: 1, firm: "Northwind AI", role: "Deployment Strategist, New Grad", status: "Not started", deadline_date: d(2), notes: "Fit 5/5", link: "https://example.com" },
+    { id: 2, firm: "Summit Capital", role: "Analyst Program 2027", status: "Applied", applied_date: d(-6), next_action: "Follow up if no reply", next_action_date: d(4) },
+    { id: 3, firm: "Trailhead Labs", role: "Business Operations Associate", status: "Interviewing", next_action: "Prep for the interview", next_action_date: d(0) },
+    { id: 4, firm: "Granite Partners", role: "Strategy Analyst", status: "Idea", notes: "Fit 4/5" },
+  ];
+  const projects = [{ id: 1, name: "Magazine: Edition 2", notes: "Print run and distribution", sort: 1 }, { id: 2, name: "Learn AI engineering", notes: "One step a day", sort: 2 }];
+  const tasks = [
+    { id: 1, project_id: 1, title: "Line up 3 shops to carry the issue", done: false, due_date: d(0) },
+    { id: 2, project_id: 1, title: "Post the cover reveal", done: false, due_date: d(3) },
+    { id: 3, project_id: 2, title: "Write 15 eval cases", done: false, due_date: d(1) },
+    { id: 4, project_id: 2, title: "Read Building effective agents", done: true, done_at: d(-1) },
+  ];
+  return { people, log, jobs, projects, tasks, today: d(0), rules: { first: 3, second: 7, closeAfter: 7, maxFollowups: 2, thanks: 1, checkin: 60 } };
 })();

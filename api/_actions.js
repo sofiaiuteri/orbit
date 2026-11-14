@@ -110,3 +110,92 @@ export async function applyAction(b) {
       throw new Error("Unknown action: " + b.action);
   }
 }
+
+// ---------- jobs (career.applications) and projects (career.projects / career.tasks) ----------
+export const JOB_STATUSES = ["Idea", "Not started", "Applied", "Interviewing", "Offer", "Rejected", "Closed", "Withdrawn"];
+async function jobLog(appId, text) { await sql`INSERT INTO career.activity (kind, text, app_id) VALUES ('orbit', ${text}, ${appId})`; }
+
+export async function applyJobAction(b) {
+  const t = today();
+  const id = Number(b.id) || null;
+  const d = isDate(b.date) ? b.date : null;
+  if (b.action === "job_add") {
+    if (!clean(b.firm)) throw new Error("Company is required.");
+    const status = JOB_STATUSES.includes(b.status) ? b.status : "Not started";
+    const [r] = await sql`INSERT INTO career.applications (firm, role, category, status, link, notes, deadline_date, applied_date, next_action, next_action_date)
+      VALUES (${clean(b.firm)}, ${clean(b.role)}, ${clean(b.category)}, ${status}, ${clean(b.link)}, ${clean(b.notes)}, ${isDate(b.deadline_date) ? b.deadline_date : null},
+              ${status === "Applied" ? (d || t) : null}, ${status === "Applied" ? "Follow up if no reply" : clean(b.next_action)}, ${status === "Applied" ? addDays(d || t, 10) : (isDate(b.next_action_date) ? b.next_action_date : null)}) RETURNING id`;
+    await jobLog(r.id, `Added ${clean(b.firm)}${b.role ? ", " + b.role : ""}.`);
+    return r.id;
+  }
+  const [job] = id ? await sql`SELECT * FROM career.applications WHERE id = ${id}` : [null];
+  if (!job) throw new Error("Job not found");
+  switch (b.action) {
+    case "job_status": {
+      const st = JOB_STATUSES.includes(b.status) ? b.status : null;
+      if (!st) throw new Error("Unknown status");
+      const applied = st === "Applied" ? (d || job.applied_date || t) : job.applied_date;
+      const na = st === "Applied" ? "Follow up if no reply" : st === "Interviewing" ? "Prep for the interview" : ["Rejected", "Closed", "Withdrawn"].includes(st) ? null : job.next_action;
+      const nad = st === "Applied" ? addDays(d || t, 10) : ["Rejected", "Closed", "Withdrawn"].includes(st) ? null : job.next_action_date;
+      await sql`UPDATE career.applications SET status=${st}, applied_date=${applied}, next_action=${na}, next_action_date=${nad}, updated_at=now() WHERE id=${id}`;
+      await jobLog(id, `Status: ${st}.`);
+      return id;
+    }
+    case "job_next":
+      await sql`UPDATE career.applications SET next_action=${clean(b.next_action)}, next_action_date=${d}, updated_at=now() WHERE id=${id}`;
+      await jobLog(id, `Next: ${clean(b.next_action) || "none"}${d ? " on " + d : ""}.`);
+      return id;
+    case "job_edit":
+      await sql`UPDATE career.applications SET firm=${clean(b.firm) || job.firm}, role=${b.role === undefined ? job.role : clean(b.role)}, link=${b.link === undefined ? job.link : clean(b.link)},
+        deadline_date=${b.deadline_date === undefined ? job.deadline_date : (isDate(b.deadline_date) ? b.deadline_date : null)}, category=${b.category === undefined ? job.category : clean(b.category)},
+        notes=${b.notes === undefined ? job.notes : clean(b.notes)}, updated_at=now() WHERE id=${id}`;
+      return id;
+    case "job_note":
+      if (b.text) await sql`UPDATE career.applications SET notes = CONCAT_WS(E'\n', NULLIF(notes,''), ${t + ": " + String(b.text).slice(0, 1000)}), updated_at=now() WHERE id=${id}`;
+      return id;
+    default: throw new Error("Unknown job action");
+  }
+}
+
+export async function applyTaskAction(b) {
+  const t = today();
+  const id = Number(b.id) || null;
+  switch (b.action) {
+    case "project_add": {
+      if (!clean(b.name)) throw new Error("Project name is required.");
+      const [r] = await sql`INSERT INTO career.projects (name, status, notes, link, sort) VALUES (${clean(b.name)}, 'Active', ${clean(b.notes)}, ${clean(b.link)}, 99) RETURNING id`;
+      return r.id;
+    }
+    case "project_edit":
+      await sql`UPDATE career.projects SET name=COALESCE(${clean(b.name)}, name), notes=${clean(b.notes)}, link=${clean(b.link)}, updated_at=now() WHERE id=${id}`;
+      return id;
+    case "project_done":
+      await sql`UPDATE career.projects SET status='Done', updated_at=now() WHERE id=${id}`;
+      return id;
+    case "task_add": {
+      const pid = Number(b.project_id) || null;
+      if (!pid || !clean(b.title)) throw new Error("Need a project and a task.");
+      const [r] = await sql`INSERT INTO career.tasks (project_id, title, due_date, done) VALUES (${pid}, ${clean(b.title)}, ${isDate(b.date) ? b.date : null}, false) RETURNING id`;
+      return r.id;
+    }
+    case "task_done":
+      await sql`UPDATE career.tasks SET done=true, done_at=${t} WHERE id=${id}`;
+      return id;
+    case "task_undo":
+      await sql`UPDATE career.tasks SET done=false, done_at=NULL WHERE id=${id}`;
+      return id;
+    case "task_move":
+      await sql`UPDATE career.tasks SET due_date=${isDate(b.date) ? b.date : addDays(t, Number(b.days) || 1)} WHERE id=${id}`;
+      return id;
+    case "task_delete":
+      await sql`DELETE FROM career.tasks WHERE id=${id}`;
+      return id;
+    default: throw new Error("Unknown task action");
+  }
+}
+
+export async function applyAny(b) {
+  if (String(b.action || "").startsWith("job_")) return applyJobAction(b);
+  if (/^(task_|project_)/.test(String(b.action || ""))) return applyTaskAction(b);
+  return applyAction(b);
+}

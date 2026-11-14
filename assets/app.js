@@ -46,6 +46,18 @@ function demoAct(b) {
   if (b.action === "no_reply") { set({ status: "no_reply", next_due: null, stage: null }); return; }
   if (b.action === "remind_on") { set({ next_due: b.date, stage: p.stage || "checkin" }); return; }
   if (b.action === "hold_done") { set({ stage: p.status === "to_contact" ? null : p.status === "waiting" ? "followup" : "checkin", hold_reason: null, next_due: t }); return; }
+  if (/^(job_|task_|project_)/.test(b.action)) {
+    const j = S.jobs.find((x) => x.id === b.id), tk = S.tasks.find((x) => x.id === b.id);
+    if (b.action === "job_status" && j) Object.assign(j, { status: b.status, ...(b.status === "Applied" ? { applied_date: t, next_action: "Follow up if no reply", next_action_date: addDays(t, 10) } : {}) });
+    if (b.action === "job_next" && j) Object.assign(j, { next_action: b.next_action, next_action_date: b.date || null });
+    if (b.action === "job_add") S.jobs.push({ id: Date.now(), firm: b.firm, role: b.role, status: b.status || "Not started", link: b.link, deadline_date: b.deadline_date || null });
+    if (b.action === "task_done" && tk) Object.assign(tk, { done: true, done_at: t });
+    if (b.action === "task_undo" && tk) Object.assign(tk, { done: false });
+    if (b.action === "task_add") S.tasks.push({ id: Date.now(), project_id: b.project_id, title: b.title, due_date: b.date || null, done: false });
+    if (b.action === "project_add") S.projects.push({ id: Date.now(), name: b.name, notes: b.notes });
+    if (b.action === "project_done") S.projects = S.projects.filter((x) => x.id !== b.id);
+    return;
+  }
   if (b.action === "archive") { S.people = S.people.filter((x) => x.id !== b.id); }
 }
 
@@ -79,8 +91,9 @@ const nextStep = (p) => { const m = (p.notes || "").match(/^Next step: (.*)$/m);
 // ---------- views ----------
 function render() {
   document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
-  document.body.classList.toggle("wide", tab === "overview");
-  $("#view").innerHTML = commandBar() + (tab === "today" ? viewToday() : tab === "waiting" ? viewWaiting() : viewOverview());
+  document.body.classList.toggle("wide", tab === "overview" || tab === "jobs");
+  S.jobs ||= []; S.projects ||= []; S.tasks ||= [];
+  $("#view").innerHTML = commandBar() + (tab === "today" ? viewToday() : tab === "jobs" ? viewJobs() : tab === "projects" ? viewProjects() : tab === "waiting" ? viewWaiting() : viewOverview());
 }
 
 function viewToday() {
@@ -88,8 +101,9 @@ function viewToday() {
   const soon = S.people.filter((p) => p.next_due && p.next_due > S.today && p.next_due <= addDays(S.today, 7) && ACTIVE.includes(p.status)).sort((a, b) => a.next_due.localeCompare(b.next_due));
   const dateLabel = new Date(S.today + "T12:00:00Z").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: "UTC" });
   let h = notifBanner();
-  h += `<h1 class="title">${due.length ? `${due.length} to do today` : "You're all caught up"}</h1><p class="sub">${dateLabel}</p>`;
-  if (!due.length) h += `<div class="empty"><b>Nothing due.</b>Add someone you want to meet, or check who's coming up.</div>`;
+  const nWork = dueJobs().length + dueTasks().length;
+  h += `<h1 class="title">${due.length + nWork ? `${due.length + nWork} to do today` : "You're all caught up"}</h1><p class="sub">${dateLabel}</p>`;
+  if (due.length) h += `<h2>People</h2>`;
   for (const p of due) {
     const d = dueInfo(p), msg = draft(p, d.kind);
     h += `<div class="card due-card ${d.kind === "close" ? "close" : ""}">
@@ -99,10 +113,15 @@ function viewToday() {
       ${msg ? `<details class="draft"><summary>See the draft message</summary><div class="msg" id="msg${p.id}">${esc(msg)}</div></details>` : ""}
       <div class="actions">${actionsFor(p, d.kind, !!msg)}</div></div>`;
   }
-  if (soon.length) {
-    h += `<h2>Coming up this week</h2>`;
-    for (const p of soon) h += rowHTML(p, `${nice(p.next_due)}`);
-  }
+  h += todayWork();
+  const wk = addDays(S.today, 7);
+  const items = [
+    ...soon.map((p) => ({ d: p.next_due, html: rowHTML(p, nice(p.next_due)) })),
+    ...S.tasks.filter((t) => !t.done && t.due_date && t.due_date > S.today && t.due_date <= wk).map((t) => ({ d: t.due_date, html: taskRow(t, true) })),
+    ...activeJobs().filter((j) => (j.next_action_date && j.next_action_date > S.today && j.next_action_date <= wk) || (j.deadline_date && j.deadline_date > S.today && j.deadline_date <= wk))
+      .map((j) => ({ d: [j.next_action_date, j.deadline_date].filter((x) => x && x > S.today).sort()[0], html: jobRow(j) })),
+  ].sort((a, b) => a.d.localeCompare(b.d));
+  if (items.length) h += `<h2>Coming up this week</h2>` + items.map((i) => i.html).join("");
   return h;
 }
 function actionsFor(p, kind, hasMsg) {
@@ -136,13 +155,116 @@ function viewWaiting() {
 
 const STATUS = { to_contact: "To reach out", waiting: "Waiting", replied: "Replied", keep_warm: "Keep warm", no_reply: "No reply" };
 
+// ---------- jobs ----------
+const CLOSED = ["Rejected", "Closed", "Withdrawn"];
+const activeJobs = () => S.jobs.filter((j) => !CLOSED.includes(j.status));
+const fitOf = (j) => +((j.notes || "").match(/Fit (\d)\/5/) || [0, 0])[1];
+const dueJobs = () => activeJobs().filter((j) => (j.next_action_date && j.next_action_date <= S.today) || (j.deadline_date && j.deadline_date >= S.today && j.deadline_date <= addDays(S.today, 3) && !["Applied", "Interviewing", "Offer"].includes(j.status)));
+const dueTasks = () => S.tasks.filter((t) => !t.done && t.due_date && t.due_date <= S.today);
+const projName = (id) => (S.projects.find((p) => p.id === id) || {}).name || "";
+function jobRow(j) {
+  const when = j.next_action_date ? `${j.next_action || "Next step"} · ${nice(j.next_action_date)}` : j.deadline_date ? `Deadline ${nice(j.deadline_date)}` : j.status;
+  return `<div class="row" onclick="openJob(${j.id})"><div class="grow"><div class="name">💼 ${esc(j.firm)}</div><div class="meta">${esc(j.role || "")}</div></div><div class="count">${esc(when)}</div></div>`;
+}
+function taskRow(t, showProject) {
+  const late = t.due_date && t.due_date < S.today;
+  return `<div class="row task ${t.done ? "done" : ""}"><input type="checkbox" ${t.done ? "checked" : ""} onclick="event.stopPropagation();act({action:'${t.done ? "task_undo" : "task_done"}',id:${t.id}},'${t.done ? "Reopened" : "Done ✓"}')">
+    <div class="grow"><div class="name">${esc(t.title)}</div>${showProject ? `<div class="meta">${esc(projName(t.project_id))}</div>` : ""}</div>
+    <div class="count ${late ? "late" : ""}">${t.due_date ? (t.due_date === S.today ? "today" : nice(t.due_date)) : ""}</div></div>`;
+}
+function todayWork() {
+  let h = "";
+  const jd = dueJobs(), td = dueTasks();
+  if (jd.length) {
+    h += `<h2>Applications</h2>`;
+    for (const j of jd) {
+      const late = j.next_action_date && j.next_action_date < S.today;
+      h += `<div class="card due-card"><div class="who"><div><div class="name">💼 ${esc(j.firm)}</div><div class="meta">${esc(j.role || "")}</div></div>
+        <span class="pill ${late ? "warn" : ""}">${j.next_action_date ? (late ? "Overdue" : "Today") : "Deadline " + nice(j.deadline_date)}</span></div>
+        <div class="why">${esc(j.next_action || (j.status === "Not started" || j.status === "Idea" ? "Apply before the deadline." : "Next step"))}</div>
+        <div class="actions">${j.link ? `<a class="btn small" href="${esc(j.link)}" target="_blank">Open posting</a>` : ""}
+        ${["Idea", "Not started"].includes(j.status) ? `<button class="btn small primary" onclick="act({action:'job_status',id:${j.id},status:'Applied'},'Marked applied. Follow-up in 10 days.')">I applied</button>` : `<button class="btn small primary" onclick="act({action:'job_next',id:${j.id},next_action:null,date:null},'Done ✓')">Done</button>`}
+        <button class="btn small ghost" onclick="act({action:'job_next',id:${j.id},next_action:${esc(JSON.stringify(j.next_action || "Next step"))},date:addDays(S.today,3)},'Moved 3 days')">Later</button>
+        <button class="btn small ghost" onclick="openJob(${j.id})">Details</button></div></div>`;
+    }
+  }
+  if (td.length) { h += `<h2>Project tasks</h2>`; h += td.map((t) => taskRow(t, true)).join(""); }
+  return h;
+}
+function viewJobs() {
+  const q = query.toLowerCase();
+  const m = (j) => !q || [j.firm, j.role, j.category, j.notes].join(" ").toLowerCase().includes(q);
+  const js = S.jobs.filter(m);
+  const cols = [
+    { key: "due", title: "Next step due", list: js.filter((j) => dueJobs().includes(j)), meta: (j) => j.next_action_date ? nice(j.next_action_date) : "deadline " + nice(j.deadline_date) },
+    { key: "applied", title: "Applied", list: js.filter((j) => j.status === "Applied"), meta: (j) => j.applied_date ? nice(j.applied_date) : "" },
+    { key: "interview", title: "Interviewing", list: js.filter((j) => j.status === "Interviewing"), meta: (j) => j.next_action_date ? nice(j.next_action_date) : "" },
+    { key: "offer", title: "Offers", list: js.filter((j) => j.status === "Offer"), meta: () => "" },
+    { key: "todo", title: "To apply", list: js.filter((j) => j.status === "Not started"), meta: (j) => j.deadline_date ? "due " + nice(j.deadline_date) : (j.deadline || "") },
+    { key: "idea", title: "Ideas (best fit first)", list: js.filter((j) => j.status === "Idea").sort((a, b) => fitOf(b) - fitOf(a)), meta: (j) => fitOf(j) ? "fit " + fitOf(j) + "/5" : "" },
+  ];
+  const closed = js.filter((j) => CLOSED.includes(j.status)).length;
+  let h = `<div class="ov-head"><h1 class="title">Jobs</h1><span class="sub">${activeJobs().length} open · ${S.jobs.filter((j) => j.status === "Applied").length} applied</span>
+    <input class="search small" placeholder="Search company or role…" value="${esc(query)}" oninput="query=this.value;const c=this.selectionStart;render();const s=$('.ov-head .search');s.focus();s.setSelectionRange(c,c)"></div><div class="board">`;
+  for (const c of cols) {
+    h += `<section class="col col-${c.key}"><header>${c.title}<span>${c.list.length}</span></header>${c.list.map((j) =>
+      `<div class="mini" onclick="openJob(${j.id})" title="${esc([j.firm, j.role].filter(Boolean).join(" · "))}"><span class="nm">${esc(j.firm)}</span><span class="co">${esc(j.role || "")}</span><span class="mt">${esc(c.meta(j))}</span></div>`).join("") || `<div class="none">None</div>`}</section>`;
+  }
+  return h + `</div><p class="sub" style="margin-top:12px;font-size:13px">${closed} closed or rejected roles are hidden. Search to find one.</p>`;
+}
+function openJob(id) {
+  const j = S.jobs.find((x) => x.id === id); if (!j) return;
+  const sb = (st) => `<button class="btn small ${j.status === st ? "primary" : ""}" onclick="act({action:'job_status',id:${id},status:'${st}'},'${st}');closeSheet()">${st}</button>`;
+  openSheet(`<div class="who"><div><h3>${esc(j.firm)}</h3><div class="meta">${esc(j.role || "")}${j.category ? " · " + esc(j.category) : ""}</div></div><span class="pill gray">${esc(j.status)}</span></div>
+    <div class="actions" style="margin:12px 0">${j.link ? `<a class="btn small primary" href="${esc(j.link)}" target="_blank">Open posting ↗</a>` : ""}</div>
+    <div class="field"><label>Status</label><div class="actions">${["Idea", "Not started", "Applied", "Interviewing", "Offer", "Rejected", "Closed"].map(sb).join("")}</div></div>
+    <div class="field"><label>Next step</label><div style="display:flex;gap:8px"><input id="j_na" value="${esc(j.next_action || "")}" placeholder="e.g. Ask Lucy for a referral"><input id="j_nad" type="date" value="${j.next_action_date || ""}" style="max-width:160px"></div></div>
+    <div class="two"><div class="field"><label>Deadline</label><input id="j_dl" type="date" value="${j.deadline_date || ""}"></div><div class="field"><label>Posting link</label><input id="j_link" value="${esc(j.link || "")}"></div></div>
+    <div class="field"><label>Notes</label><textarea id="j_notes">${esc(j.notes || "")}</textarea></div>
+    <div class="actions"><button class="btn primary" onclick="saveJob(${id})">Save</button><button class="btn ghost" onclick="closeSheet()">Close</button></div>`);
+}
+async function saveJob(id) {
+  await act({ action: "job_edit", id, link: $("#j_link").value, deadline_date: $("#j_dl").value, notes: $("#j_notes").value });
+  await act({ action: "job_next", id, next_action: $("#j_na").value, date: $("#j_nad").value }, "Saved");
+  closeSheet();
+}
+function openAddJob() {
+  openSheet(`<h3>Add a job</h3><div class="two"><div class="field"><label>Company</label><input id="aj_firm"></div><div class="field"><label>Role</label><input id="aj_role"></div></div>
+    <div class="field"><label>Posting link</label><input id="aj_link"></div>
+    <div class="two"><div class="field"><label>Status</label><select id="aj_st"><option>Not started</option><option>Applied</option><option>Idea</option></select></div><div class="field"><label>Deadline</label><input id="aj_dl" type="date"></div></div>
+    <div class="actions"><button class="btn primary" onclick="act({action:'job_add',firm:$('#aj_firm').value,role:$('#aj_role').value,link:$('#aj_link').value,status:$('#aj_st').value,deadline_date:$('#aj_dl').value},'Job added');closeSheet()">Add</button><button class="btn ghost" onclick="closeSheet()">Cancel</button></div>`);
+  setTimeout(() => $("#aj_firm").focus(), 50);
+}
+
+// ---------- projects ----------
+function viewProjects() {
+  let h = `<h1 class="title">Projects</h1><p class="sub">${S.projects.length} active · tick tasks off as you go</p>`;
+  for (const p of S.projects) {
+    const ts = S.tasks.filter((t) => t.project_id === p.id);
+    const open = ts.filter((t) => !t.done), done = ts.filter((t) => t.done);
+    h += `<div class="card proj"><div class="who"><div><div class="name">${esc(p.name)}</div>${p.notes ? `<div class="meta">${esc(p.notes.length > 160 ? p.notes.slice(0, 160) + "…" : p.notes)}</div>` : ""}</div>
+      <span class="pill gray">${open.length} open</span></div>
+      ${open.map((t) => taskRow(t)).join("")}
+      ${done.length ? `<details><summary class="sub" style="margin:6px 0;cursor:pointer;font-size:13px">${done.length} done recently</summary>${done.map((t) => taskRow(t)).join("")}</details>` : ""}
+      <div class="addtask"><input id="nt${p.id}" placeholder="Add a task…" onkeydown="if(event.key==='Enter')addTask(${p.id})"><input id="nd${p.id}" type="date"><button class="btn small" onclick="addTask(${p.id})">Add</button></div>
+      <div class="actions" style="margin-top:6px">${p.link ? `<a class="btn small ghost" href="${esc(p.link)}" target="_blank">Open link ↗</a>` : ""}<button class="btn small ghost" onclick="if(confirm('Mark this project finished?'))act({action:'project_done',id:${p.id}},'Project finished 🎉')">Finish project</button></div></div>`;
+  }
+  return h || `<div class="empty"><b>No projects yet.</b>Tap + Add to start one.</div>`;
+}
+function addTask(pid) { const t = $("#nt" + pid).value.trim(); if (!t) return; act({ action: "task_add", project_id: pid, title: t, date: $("#nd" + pid).value }, "Task added"); }
+function openAddProject() {
+  openSheet(`<h3>New project</h3><div class="field"><label>Name</label><input id="ap_name"></div><div class="field"><label>Notes</label><textarea id="ap_notes"></textarea></div>
+    <div class="actions"><button class="btn primary" onclick="act({action:'project_add',name:$('#ap_name').value,notes:$('#ap_notes').value},'Project added');closeSheet()">Add</button><button class="btn ghost" onclick="closeSheet()">Cancel</button></div>`);
+  setTimeout(() => $("#ap_name").focus(), 50);
+}
+
 // ---------- command bar ----------
 let lastResult = null;
 function commandBar() {
   return `<form class="cmd" onsubmit="runCommand(event)">
-    <textarea id="cmdText" rows="1" placeholder="Tell Orbit what happened…" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();runCommand(event)}"></textarea>
+    <textarea id="cmdText" rows="1" placeholder="Tell Orbit what happened… (people, jobs or projects)" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();runCommand(event)}"></textarea>
     <button class="btn primary" id="cmdBtn">Do it</button></form>
-    ${!lastResult ? `<div class="hint">Try: “Ted Elliott: follow up once I finish the AI certification” or “Ivan replied, coffee next Wednesday”</div>` : ""}
+    ${!lastResult ? `<div class="hint">Try: “Ivan replied, coffee Wednesday” · “Applied to Microsoft FRP” · “Add a task to Edition 2: email Walkabout by Friday”</div>` : ""}
     ${lastResult ? `<div class="result ${lastResult.ok ? "" : "warn"}"><span>${esc(lastResult.text)}</span><button class="x" onclick="lastResult=null;render()">×</button></div>` : ""}`;
 }
 async function runCommand(e) {
@@ -330,7 +452,7 @@ $("#loginForm").addEventListener("submit", async (e) => {
   if (r.ok) load(); else $("#loginErr").textContent = "That password didn't work.";
 });
 document.querySelectorAll("#tabs button").forEach((b) => (b.onclick = () => { tab = b.dataset.tab; render(); scrollTo(0, 0); }));
-$("#addBtn").onclick = openAdd;
+$("#addBtn").onclick = () => (tab === "jobs" ? openAddJob() : tab === "projects" ? openAddProject() : openAdd());
 if ("serviceWorker" in navigator && !DEMO) navigator.serviceWorker.register("/sw.js");
 load();
-if (location.hash === "#ov") { tab = "overview"; setTimeout(render, 50); }
+if (location.hash.length > 1) { tab = ({ "#ov": "overview", "#jobs": "jobs", "#projects": "projects" })[location.hash] || tab; setTimeout(render, 50); }
